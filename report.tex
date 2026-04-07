@@ -1,0 +1,596 @@
+% ============================================================
+%  AML Project 4 -- IEEE Report
+%  CSCI-6767 Applied Machine Learning & Data Analytics
+%  Spring 2026
+%  Team: Gabil Gurbanov, Hamida Hagverdiyeva
+% ============================================================
+\documentclass[conference]{IEEEtran}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+
+% Path to uploaded figures (upload model_cache/figs/ contents to Overleaf)
+\graphicspath{{figs/}}
+
+\begin{document}
+
+% --- TITLE ---------------------------------------------------------------
+\title{Non-Linearity, Tree-Based Classification, and SVM:\\
+       A Comparative Study on Regression and Intrusion Detection}
+
+\author{
+  \IEEEauthorblockN{Gabil Gurbanov}
+  \IEEEauthorblockA{CSCI-6767, Spring 2026 \\
+    \textit{Fairleigh Dickinson University}}
+  \and
+  \IEEEauthorblockN{Hamida Hagverdiyeva}
+  \IEEEauthorblockA{CSCI-6767, Spring 2026 \\
+    \textit{Fairleigh Dickinson University}}
+}
+
+\maketitle
+
+% --- ABSTRACT ------------------------------------------------------------
+\begin{abstract}
+This paper applies and compares a spectrum of machine learning methods
+across two distinct tasks: non-linear regression on the Seoul Bike Sharing
+Demand dataset and binary classification on the KDD Cup 1999 network
+intrusion dataset. For regression we evaluate polynomial regression, step
+functions, B-splines, natural cubic splines, locally weighted scatterplot
+smoothing (LOESS), and generalized additive models (GAMs) against a linear
+baseline. For classification we evaluate bagging, random forests, gradient
+boosting, and support vector machines (SVMs) with four kernel types. GAMs
+achieve the best regression performance (RMSE~$=$~317.70, $R^2$~$=$~0.758),
+while tree ensembles and RBF-kernel SVMs dominate classification
+($F_1 \geq 0.999$). Our analysis highlights why model choice must align with
+data structure, scale, and interpretability requirements.
+\end{abstract}
+
+\begin{IEEEkeywords}
+non-linear regression, generalized additive models, splines, random forest,
+gradient boosting, support vector machines, network intrusion detection,
+bike sharing demand
+\end{IEEEkeywords}
+
+% --- 1. INTRODUCTION -----------------------------------------------------
+\section{Introduction}\label{sec:intro}
+
+Linear models remain a practical baseline for many supervised learning tasks,
+yet they impose a rigid assumption: the response is a weighted sum of the
+input features. When the true data-generating process is non-linear, or when
+decision boundaries are complex and high-dimensional, linear models
+systematically underfit and yield poor generalisation.
+
+This project pursues two complementary goals. First, we demonstrate the
+gains achievable by replacing a linear regression baseline with progressively
+flexible non-linear alternatives on a real-world demand-forecasting problem.
+Second, we compare ensemble tree methods and kernel SVMs for a large-scale
+binary classification task in the network-security domain.
+
+The two-dataset strategy is deliberate: a single dataset forced into both
+tasks would compromise the integrity of at least one comparison. Using
+domain-appropriate datasets lets each model family operate under conditions
+where it can reasonably be expected to succeed or fail, producing cleaner
+insights.
+
+% --- 2. DATASETS ---------------------------------------------------------
+\section{Datasets}\label{sec:data}
+
+\subsection{Seoul Bike Sharing Demand (Regression)}
+
+The Seoul Bike Sharing Demand dataset \cite{seouldataset} is drawn from the
+UCI Machine Learning Repository (ID~560). It contains 8,760 hourly records
+spanning one full year, with 14 features including air temperature, humidity,
+wind speed, visibility, dew-point temperature, solar radiation, snowfall,
+rainfall, and categorical indicators for season, holiday, and functioning day.
+The target variable is the hourly count of rented bicycles
+(\textit{Rented Bike Count}).
+
+\textbf{Why it fits.} Hourly demand exhibits strong non-linear patterns:
+a bimodal peak at the morning and evening rush hours, a non-monotone
+temperature response (rentals peak near 20\textdegree{}C and fall in extreme
+heat), and seasonal periodicity. These characteristics make the dataset
+well-suited for evaluating splines, LOESS, and GAMs against linear baselines.
+
+\textbf{Preprocessing.} The \texttt{Date} column is dropped. Categorical
+columns (\texttt{Seasons}, \texttt{Holiday}, \texttt{Functioning Day}) are
+one-hot encoded. The target is log-transformed to reduce right skew. Features
+are split 80/20 into training and test sets with \texttt{random\_state=42}.
+
+\subsection{KDD Cup 1999 -- 10\% Subset (Classification)}
+
+The KDD Cup 1999 dataset \cite{kddcup99} is a widely used benchmark for
+intrusion-detection system (IDS) research. The 10\% subset contains 494,021
+connection records and 41 features comprising basic connection attributes
+(duration, protocol type, service, flag), content features (number of failed
+logins, root accesses), and traffic features (same-host and same-service
+connection rates). The original multi-class target is collapsed to a binary
+label: \textit{normal} (0) vs.\ \textit{attack} (1).
+
+\textbf{Why it fits.} The large sample size highlights scalability
+differences between tree ensembles and kernel SVMs. The rich, mixed feature
+space (continuous + categorical) allows all model families to be fairly
+compared.
+
+\textbf{Preprocessing.} Categorical features (\texttt{protocol\_type},
+\texttt{service}, \texttt{flag}) are label-encoded. An 80/20 stratified
+train/test split preserves class proportions. Features are standardised
+(zero mean, unit variance) for SVM. Because kernel SVM training complexity
+is $\mathcal{O}(n^2)$--$\mathcal{O}(n^3)$ in the number of samples $n$, SVMs
+are trained on a 15,000-sample stratified subset; tree ensembles use the
+full training set.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/bike_eda1.png}
+  \caption{Seoul Bike dataset: hourly demand distribution (left) and
+    temperature vs.\ rented bike count scatter (right), illustrating
+    non-linear structure in both the time and temperature axes.}
+  \label{fig:bike_eda1}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/bike_corr.png}
+  \caption{Pearson correlation heatmap for the Seoul Bike dataset.
+    Temperature and dew-point temperature are nearly collinear
+    ($r \approx 0.91$).}
+  \label{fig:bike_corr}
+\end{figure}
+
+% --- 3. METHODS ----------------------------------------------------------
+\section{Methods}\label{sec:methods}
+
+\subsection{Non-Linear Regression Models}
+
+\subsubsection{Baseline -- Linear Regression}
+Ordinary least squares (OLS) fits the model
+\begin{equation}
+  \hat{y} = \beta_0 + \sum_{j=1}^{p} \beta_j x_j,
+  \label{eq:ols}
+\end{equation}
+where $\hat{y}$ is the predicted log-transformed count and $x_j$ are
+the pre-processed features. This serves as the lower-bound baseline.
+
+\subsubsection{Polynomial Regression}
+Feature space is expanded by including all polynomial terms up to degree $d$:
+\begin{equation}
+  \hat{y} = \beta_0 + \beta_1 x + \beta_2 x^2 + \cdots + \beta_d x^d.
+  \label{eq:poly}
+\end{equation}
+Ridge regularisation ($\ell_2$ penalty) is applied via \texttt{RidgeCV} to
+control variance at higher degrees. The optimal degree is selected by
+cross-validated RMSE over $d \in \{2, 3, 4, 5\}$.
+
+\subsubsection{Step Functions}
+The range of each continuous predictor is partitioned into $K$ bins using
+equal-frequency quantile cuts, generating indicator dummy variables
+$\mathbf{1}(x \in \mathcal{C}_k)$ for $k = 1, \ldots, K$. A ridge regression
+is then fit on these expanded features. Step functions allow abrupt level
+shifts between intervals but cannot capture smooth transitions within them.
+
+\subsubsection{B-Splines}
+Scikit-learn's \texttt{SplineTransformer} generates a basis of B-spline
+functions of degree 3 (cubic) with $K$ interior knots placed at uniform
+quantiles. The transformed features are passed to ridge regression. B-splines
+guarantee $C^2$ continuity everywhere (smooth first and second derivatives),
+avoiding the artificial jumps of step functions while remaining piecewise
+polynomial.
+
+\subsubsection{Natural Cubic Splines}
+Natural cubic splines (NCS) are cubic splines that are additionally
+constrained to be linear beyond the boundary knots, reducing edge-effect
+artefacts. The design matrix is constructed using \texttt{patsy}'s
+\texttt{cr()} formula syntax:
+\begin{equation}
+  \hat{y} = \sum_{k=1}^{K} \alpha_k N_k(x),
+  \label{eq:ncs}
+\end{equation}
+where $N_k$ are the natural spline basis functions. Ridge regression is
+applied to the full multivariate NCS design matrix.
+
+\subsubsection{LOESS (Local Regression)}
+LOESS (locally estimated scatterplot smoothing) fits weighted local
+polynomial regressions at each target point $x_0$:
+\begin{equation}
+  \hat{f}(x_0) = \arg\min_{\boldsymbol{\beta}}
+    \sum_{i=1}^{n} K\!\left(\frac{x_i - x_0}{h}\right)
+    \bigl(y_i - \beta_0 - \beta_1 x_i\bigr)^2,
+  \label{eq:loess}
+\end{equation}
+where $K(\cdot)$ is a tri-cube kernel and $h$ controls the bandwidth. We
+apply LOESS to temperature alone (fraction $= 0.10$) as a univariate
+interpretive smoother. Because it is not a multivariate parametric model,
+its test-set metrics are not directly comparable to the other regressors;
+they are included to illustrate the technique and its limitations.
+
+\subsubsection{Generalized Additive Model (GAM)}
+A GAM decomposes the response into a sum of smooth functions of individual
+predictors:
+\begin{equation}
+  g\!\bigl(\mathbb{E}[y]\bigr)
+    = \beta_0 + \sum_{j=1}^{p} f_j(x_j),
+  \label{eq:gam}
+\end{equation}
+where $g$ is the link function (identity for Gaussian regression) and each
+$f_j$ is an arbitrary smooth function estimated via penalised regression
+splines. We use \texttt{pygam.LinearGAM} with a spline term $s(\cdot)$ for
+each numeric predictor. The penalty controls the roughness of each $f_j$,
+making GAMs inherently regularised and interpretable through partial
+dependence plots.
+
+\subsection{Tree-Based Classification Methods}
+
+\subsubsection{Bagging}
+Bootstrap aggregating (bagging) \cite{breiman1996bagging} trains $B$
+decision trees on independently bootstrapped training sets and averages
+(or majority-votes) their predictions:
+\begin{equation}
+  \hat{f}_{\text{bag}}(x) = \frac{1}{B} \sum_{b=1}^{B} T_b(x),
+  \label{eq:bagging}
+\end{equation}
+where $T_b$ is the tree trained on the $b$-th bootstrap sample. Variance is
+reduced without increasing bias. We use $B = 50$ decision-tree base learners.
+
+\subsubsection{Random Forest}
+Random forests \cite{breiman2001rf} augment bagging by also randomising the
+feature subset considered at each split. At each node, only $m = \lfloor
+\sqrt{p} \rfloor$ features (for classification) are eligible, decorrelating
+trees and further reducing ensemble variance. We train $B = 100$ trees.
+
+\subsubsection{Gradient Boosting}
+Gradient boosting \cite{friedman2001gbm} constructs an additive model
+sequentially, each new tree $T_b$ fitting the negative gradient (pseudo
+residuals) of the loss from the current ensemble:
+\begin{equation}
+  F_b(x) = F_{b-1}(x) + \eta T_b(x),
+  \label{eq:gbm}
+\end{equation}
+where $\eta$ is the learning rate (shrinkage). We use $B = 100$ stages with
+$\eta = 0.1$ and maximum tree depth of 3.
+
+\subsection{Support Vector Machines}
+
+An SVM \cite{cortes1995svm} finds the maximum-margin hyperplane
+\begin{equation}
+  \min_{\mathbf{w},b} \frac{1}{2}\|\mathbf{w}\|^2 + C \sum_{i=1}^{n} \xi_i
+  \quad \text{s.t.} \quad y_i(\mathbf{w}^\top \phi(x_i)+b) \geq 1 - \xi_i,
+  \label{eq:svm}
+\end{equation}
+where $\phi$ is a kernel-induced feature map, $C$ is the regularisation
+parameter, and $\xi_i \geq 0$ are slack variables. We evaluate four kernels:
+
+\begin{itemize}
+  \item \textbf{Linear}: $K(x,x') = x^\top x'$
+  \item \textbf{RBF}: $K(x,x') = \exp(-\gamma\|x-x'\|^2)$
+  \item \textbf{Polynomial}: $K(x,x') = (\gamma x^\top x' + r)^d$, $d=3$
+  \item \textbf{Sigmoid}: $K(x,x') = \tanh(\gamma x^\top x' + r)$
+\end{itemize}
+
+All SVMs use $C = 1$ and default scikit-learn gamma (\texttt{scale}).
+
+% --- 4. EXPERIMENTS ------------------------------------------------------
+\section{Experiments and Results}\label{sec:experiments}
+
+\subsection{Regression Evaluation Metrics}
+
+We report Root Mean Squared Error (RMSE), Mean Absolute Error (MAE), and the
+coefficient of determination $R^2$:
+\begin{equation}
+  \text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}, \quad
+  \text{MAE}  = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|,
+  \label{eq:reg_metrics}
+\end{equation}
+\begin{equation}
+  R^2 = 1 - \frac{\sum(y_i-\hat{y}_i)^2}{\sum(y_i-\bar{y})^2}.
+  \label{eq:r2}
+\end{equation}
+Lower RMSE/MAE and higher $R^2$ indicate better fit.
+
+\subsection{Regression Results}
+
+\begin{table}[t]
+  \caption{Regression Model Comparison on Seoul Bike Test Set}
+  \label{tab:regression}
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    \textbf{Model} & \textbf{RMSE} & \textbf{MAE} & $\mathbf{R^2}$ \\
+    \midrule
+    GAM (LinearGAM)            & \textbf{317.70} & 235.18 & \textbf{0.7578} \\
+    Polynomial (degree 3)      & 350.99 & \textbf{215.75} & 0.7043 \\
+    B-Splines (SplineTransformer) & 351.50 & 260.98 & 0.7035 \\
+    Natural Cubic Splines      & 384.94 & 285.28 & 0.6444 \\
+    Step Functions             & 400.64 & 299.26 & 0.6147 \\
+    Baseline (Linear)          & 440.78 & 330.39 & 0.5337 \\
+    LOESS (temp., frac=0.10)   & 545.09 & 388.10 & 0.2869 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:regression} summarises results. All major non-linear models
+outperform the linear baseline, confirming that linear regression is
+insufficient for this task. GAM achieves the best RMSE and $R^2$, while
+polynomial degree 3 achieves the lowest MAE. B-splines and polynomial
+regression are nearly tied overall. The LOESS result is expected to be weaker
+because it operates on a single feature; its primary utility is visualisation
+of the temperature effect (Fig.~\ref{fig:loess}).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/poly_compare.png}
+  \caption{Polynomial regression degree sweep: RMSE on the validation set
+    as a function of polynomial degree. Degree 3 gives the best trade-off
+    between bias and variance.}
+  \label{fig:poly}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/spline_1d.png}
+  \caption{B-spline fit (blue) vs.\ LOESS trend (orange) on the temperature
+    axis. Splines capture the smooth non-linear temperature response while
+    remaining stable at the boundary.}
+  \label{fig:loess}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/gam_pdp.png}
+  \caption{GAM partial dependence plots. Each panel shows the learned smooth
+    effect $\hat{f}_j(x_j)$ with 95\% confidence intervals. Hour and
+    temperature exhibit clear non-monotone patterns.}
+  \label{fig:gam_pdp}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/reg_compare.png}
+  \caption{Final regression model comparison: RMSE (left) and $R^2$ (right)
+    on the held-out test set. GAM leads on both metrics.}
+  \label{fig:reg_compare}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/reg_avp.png}
+  \caption{Actual vs.\ predicted scatter plots for selected regression models.
+    GAM predictions cluster most tightly around the identity line.}
+  \label{fig:reg_avp}
+\end{figure}
+
+\subsection{Classification Evaluation Metrics}
+
+For binary classification we report accuracy, precision, recall, $F_1$ score,
+and Area Under the ROC Curve (AUC-ROC):
+\begin{equation}
+  F_1 = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}
+             {\text{Precision} + \text{Recall}},
+  \label{eq:f1}
+\end{equation}
+\begin{equation}
+  \text{AUC} = \int_0^1 \text{TPR}(t) d\text{FPR}(t).
+  \label{eq:auc}
+\end{equation}
+Because the class distribution skews toward the attack class, $F_1$ and
+AUC-ROC are the primary metrics.
+
+\subsection{Classification Results}
+
+\begin{table}[t]
+  \caption{Classification Model Comparison on KDD Cup 1999 Test Set}
+  \label{tab:classification}
+  \centering
+  \resizebox{\columnwidth}{!}{%
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{Model} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rec.} & $\mathbf{F_1}$ & \textbf{AUC} \\
+    \midrule
+    Bagging (DT)      & \textbf{0.9998} & \textbf{0.9999} & 0.9998 & \textbf{0.9999} & \textbf{1.0000} \\
+    Random Forest     & \textbf{0.9998} & \textbf{0.9999} & 0.9998 & \textbf{0.9999} & \textbf{1.0000} \\
+    Gradient Boosting & 0.9997 & 0.9998 & 0.9997 & 0.9998 & 0.9999 \\
+    SVM -- RBF        & 0.9983 & 0.9992 & 0.9987 & 0.9989 & 0.9999 \\
+    SVM -- Polynomial & 0.9980 & 0.9989 & 0.9987 & 0.9988 & 0.9978 \\
+    SVM -- Linear     & 0.9971 & 0.9983 & 0.9981 & 0.9982 & 0.9977 \\
+    SVM -- Sigmoid    & 0.9496 & 0.9682 & 0.9690 & 0.9686 & 0.8861 \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+
+Table~\ref{tab:classification} presents results. Tree ensembles and the RBF
+kernel dominate. Gradient boosting trails the parallel ensembles slightly,
+because its sequential construction limits the breadth of diversity it can
+exploit on this highly separable problem. Among SVMs the kernel choice is
+decisive: RBF and polynomial kernels learn compact, curved boundaries that
+tightly enclose attack clusters, whereas the sigmoid kernel imposes an
+S-shaped decision surface that clips incorrectly through portions of the
+normal class, dropping accuracy by roughly 5 percentage points and AUC by
+0.11 compared to RBF.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/clf_conf_all.png}
+  \caption{Confusion matrices for all seven classification models. The
+    sigmoid SVM matrix shows the highest off-diagonal counts.}
+  \label{fig:conf}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/roc_all.png}
+  \caption{ROC curves for all classifiers. Sigmoid SVM is visually
+    distinguishable from the rest, which cluster near the top-left corner.}
+  \label{fig:roc}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/gb_deviance.png}
+  \caption{Gradient boosting: training and test deviance (log-loss) as a
+    function of boosting stage. The test curve plateaus after $\approx 40$
+    stages, indicating good generalisation without overfitting.}
+  \label{fig:gb_deviance}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/rf_importance.png}
+  \caption{Random forest feature importances (mean decrease in impurity).
+    Traffic-rate features dominate, indicating that connection volume patterns
+    are the most discriminative signal for intrusion detection.}
+  \label{fig:rf_importance}
+\end{figure}
+
+% --- 5. ERROR ANALYSIS ---------------------------------------------------
+\section{Error Analysis}\label{sec:error}
+
+\subsection{Regression}
+
+Fig.~\ref{fig:reg_resid} shows residual plots. The linear baseline exhibits
+a systematic fan-shaped pattern, confirming heteroscedastic errors -- a clear
+sign of model misspecification from unmodelled non-linearity. GAM residuals
+are notably more homoscedastic, though moderate underestimation persists at
+peak demand hours (rush hours), where the distribution of counts is multi-modal
+within each time bin and no single smooth function captures the full spread.
+
+The near-perfect correlation between temperature and dew-point temperature
+($r = 0.91$, Fig.~\ref{fig:bike_corr}) introduces mild multicollinearity in
+polynomial and spline models; GAM's per-feature smooth functions sidestep this
+issue by modelling each predictor independently.
+
+LOESS underperforms because the univariate smoother cannot account for
+confounding variables. When evaluated on the full test set, its predictions
+are based solely on temperature and ignore hour-of-day, season, and weather
+features -- making the reported RMSE an indicator of single-feature predictive
+power rather than model quality per se.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/reg_resid.png}
+  \caption{Residual plots (predicted vs.\ residual) for the linear baseline
+    (left) and GAM (right). GAM residuals are more centred and homoscedastic.}
+  \label{fig:reg_resid}
+\end{figure}
+
+\subsection{Classification}
+
+The near-perfect tree ensemble metrics reflect a known characteristic of
+the KDD Cup 1999 dataset: it contains a large number of duplicate or
+near-duplicate attack records derived from synthetic traffic replay. As a
+result, the effective diversity of attack patterns is lower than the raw
+count suggests, making the problem easier than real-world IDS scenarios.
+We acknowledge this limitation and note that evaluation on a modern benchmark
+(e.g.\ UNSW-NB15 \cite{unswnb15}) would be necessary to validate
+generalisation.
+
+The sigmoid kernel's poor performance is attributable to its functional form.
+Unlike the RBF kernel, which can represent arbitrary closed decision regions,
+the sigmoid kernel is conditionally positive-definite only for specific
+parameter settings. When $\gamma$ and $r$ are at default values, the resulting
+kernel matrix may not be strictly positive-definite, leading to a poorly
+conditioned optimisation and suboptimal boundaries.
+
+The SVM subset (15,000 samples) introduces a potential bias: SVMs may
+benefit from seeing more examples of rare attack subtypes. Tree ensembles,
+which were trained on the full set ($\sim\!395,000$ training examples), have
+no such constraint, making a direct performance comparison slightly unfair.
+Nonetheless, the scale of the gap ($F_1 > 0.999$ for ensembles vs.\
+$F_1 = 0.9989$ for RBF-SVM) is large enough to be meaningful.
+
+% --- 6. CONCLUSION -------------------------------------------------------
+\section{Conclusion}\label{sec:conclusion}
+
+We evaluated nine models across two real-world tasks and draw the following
+conclusions:
+
+\begin{itemize}
+  \item \textbf{Non-linear regression beats linear modelling.} Every major
+    non-linear method outperforms OLS on Seoul Bike demand, with GAM achieving
+    the best balance of accuracy and interpretability ($R^2 = 0.758$ vs.\
+    $R^2 = 0.534$ for the linear baseline).
+  \item \textbf{GAMs offer the best of both worlds.} By decomposing the
+    response into interpretable per-feature curves (Fig.~\ref{fig:gam_pdp}),
+    GAMs combine predictive power comparable to splines with the transparency
+    needed for operational deployment.
+  \item \textbf{Tree ensembles are highly effective for structured tabular
+    classification.} Bagging and random forest both achieve $F_1 \geq 0.9999$
+    while training on the full dataset and remaining scalable.
+  \item \textbf{Kernel selection is critical for SVMs.} The gap between RBF
+    ($F_1 = 0.9989$, AUC~$= 0.9999$) and sigmoid
+    ($F_1 = 0.9686$, AUC~$= 0.8861$) underscores that the kernel must match
+    the geometry of the problem.
+  \item \textbf{For deployment:} we recommend GAM for interpretable regression
+    and Random Forest for large-scale classification, where scalable training,
+    deterministic feature importance, and high accuracy are all required.
+\end{itemize}
+
+% --- 7. TEAM CONTRIBUTIONS -----------------------------------------------
+\section{Team Contributions}\label{sec:contributions}
+
+\begin{itemize}
+  \item \textbf{Gabil Gurbanov}: Task 1 -- non-linear regression model
+    implementation (polynomial, step functions, B-splines, NCS, LOESS, GAM),
+    regression visualisations and diagnostics, model comparison and analysis,
+    Streamlit UI architecture and caching system.
+  \item \textbf{Hamida Hagverdiyeva}: Tasks 2 \& 3 -- classification model
+    implementation (bagging, random forest, gradient boosting, four SVM
+    kernels), ROC curve and confusion matrix analysis, feature importance
+    analysis, classification result interpretation.
+\end{itemize}
+
+% --- REFERENCES ----------------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{seouldataset}
+S.\ Sathishkumar V, J.\ Park, and Y.\ Cho,
+``Predicting Residential Energy Consumption Using CNN-LSTM Neural Networks,''
+\textit{UCI Machine Learning Repository}, Dataset ID~560, 2020.
+[Online]. Available: \url{https://archive.ics.uci.edu/ml/datasets/Seoul+Bike+Sharing+Demand}
+
+\bibitem{kddcup99}
+DARPA, ``KDD Cup 1999 Data,''
+\textit{UCI Machine Learning Repository}, 1999.
+[Online]. Available: \url{http://kdd.ics.uci.edu/databases/kddcup99/kddcup99.html}
+
+\bibitem{breiman1996bagging}
+L.\ Breiman, ``Bagging Predictors,''
+\textit{Machine Learning}, vol.\ 24, no.\ 2, pp.\ 123--140, 1996.
+
+\bibitem{breiman2001rf}
+L.\ Breiman, ``Random Forests,''
+\textit{Machine Learning}, vol.\ 45, no.\ 1, pp.\ 5--32, 2001.
+
+\bibitem{friedman2001gbm}
+J.\ H.\ Friedman, ``Greedy Function Approximation: A Gradient Boosting Machine,''
+\textit{Annals of Statistics}, vol.\ 29, no.\ 5, pp.\ 1189--1232, 2001.
+
+\bibitem{cortes1995svm}
+C.\ Cortes and V.\ Vapnik, ``Support-Vector Networks,''
+\textit{Machine Learning}, vol.\ 20, no.\ 3, pp.\ 273--297, 1995.
+
+\bibitem{unswnb15}
+N.\ Moustafa and J.\ Slay, ``UNSW-NB15: A Comprehensive Data Set for Network
+Intrusion Detection Systems,'' in \textit{Proc.\ Military Communications and
+Information Systems Conf.\ (MilCIS)}, Canberra, Australia, 2015.
+
+\bibitem{hastie2009esl}
+T.\ Hastie, R.\ Tibshirani, and J.\ Friedman,
+\textit{The Elements of Statistical Learning}, 2nd ed.\
+New York: Springer, 2009.
+
+\bibitem{james2021isl}
+G.\ James, D.\ Witten, T.\ Hastie, and R.\ Tibshirani,
+\textit{An Introduction to Statistical Learning}, 2nd ed.\
+New York: Springer, 2021.
+
+\end{thebibliography}
+
+\end{document}
