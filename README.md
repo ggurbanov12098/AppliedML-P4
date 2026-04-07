@@ -30,6 +30,8 @@ The objective is not only to maximize scores, but also to explain why some model
 
 ### Presentation format
 
+[Canva link](https://canva.link/pvjbl23ldp88qo0)  
+
 - 10 minutes total per team
 - 5 minutes presentation + 5 minutes Q&A
 
@@ -103,19 +105,29 @@ Note:
 
 ## 6) How to Run
 
-## 6.1 Notebook
+## 6.1 One-Time Environment Setup (Recommended)
+
+If `.venv` was copied from another repository/path, recreate it locally so
+all scripts point to this workspace:
+
+```bash
+rm -rf .venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## 6.2 Notebook
 
 1. Open `AML_Project4res.ipynb`.
 2. Run all cells from top to bottom.
-3. If needed, install dependencies from the setup cell:
+3. In VS Code/Jupyter, select the `.venv` kernel for this workspace.
+
+## 6.3 Streamlit App (Extra Task UI)
 
 ```bash
-pip install ucimlrepo pygam patsy
-```
-
-## 6.2 Streamlit App (Extra Task UI)
-
-```bash
+source .venv/bin/activate
 streamlit run app.py
 ```
 
